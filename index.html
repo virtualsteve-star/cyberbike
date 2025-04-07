@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cyberbike Duel</title>
+  <!-- Import Orbitron for a futuristic look -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap">
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      font-family: 'Orbitron', sans-serif;
+    }
+    canvas {
+      display: block;
+    }
+    /* Controls container: spans full width at bottom, vertically centered */
+    #controls {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      box-sizing: border-box;
+      pointer-events: auto;
+    }
+    /* Futuristic scoreboard */
+    #scoreboard {
+      font-size: 22px;
+      color: #fff;
+    }
+    /* Boost fuel indicator container with label */
+    #boostFuelContainer {
+      position: relative;
+      width: 200px;
+      height: 20px;
+      border: 2px solid #fff;
+      background-color: #333;
+      margin: 0 20px;
+    }
+    #boostFuelBar {
+      height: 100%;
+      width: 100%;
+      background-color: #00f;
+    }
+    /* Label for boost fuel indicator */
+    #boostFuelLabel {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      color: #fff;
+      font-size: 14px;
+      text-align: center;
+      line-height: 20px;
+      pointer-events: none;
+    }
+    /* Diamond-shaped D-pad */
+    #dpad {
+      position: relative;
+      width: 32px;
+      height: 32px;
+    }
+    #dpad button {
+      position: absolute;
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      color: #fff;
+      cursor: pointer;
+      width: 22px;
+      height: 22px;
+      text-align: center;
+      transform: translate(-50%, -50%);
+      padding: 0;
+    }
+    #up    { top: 0%;   left: 50%; }
+    #right { top: 50%;  left: 100%; }
+    #down  { top: 100%; left: 50%; }
+    #left  { top: 50%;  left: 0%;   }
+    /* Boost button */
+    #boost {
+      width: 40px;
+      height: 40px;
+      font-size: 24px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      cursor: pointer;
+      outline: none;
+    }
+    /* Active state: blue highlight */
+    button.active {
+      background: #00f !important;
+      color: #fff !important;
+      border-radius: 4px;
+    }
+    @media (max-width: 768px) {
+      #controls {
+        height: 140px;
+      }
+      #dpad {
+        width: 48px;
+        height: 48px;
+      }
+      #dpad button {
+        width: 32px;
+        height: 32px;
+        font-size: 20px;
+      }
+      #boost {
+        width: 50px;
+        height: 50px;
+        font-size: 28px;
+      }
+      #scoreboard {
+        font-size: 26px;
+      }
+      #boostFuelContainer {
+        width: 250px;
+        height: 25px;
+      }
+      #boostFuelLabel {
+        font-size: 16px;
+        line-height: 25px;
+      }
+    }
+  </style>
+  <!-- Load modules: audio.js, renderer.js, ai.js, input.js -->
+  <script src="audio.js"></script>
+  <script src="renderer.js"></script>
+  <script src="ai.js"></script>
+  <script src="input.js"></script>
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+  
+  <!-- Controls -->
+  <div id="controls">
+    <div id="scoreboard">Round: 1 | Player: 0 | AI: 0</div>
+    <div id="boostFuelContainer">
+      <div id="boostFuelBar"></div>
+      <div id="boostFuelLabel">Boost</div>
+    </div>
+    <div id="dpad">
+      <button id="up">⬆️</button>
+      <button id="right">➡️</button>
+      <button id="down">⬇️</button>
+      <button id="left">⬅️</button>
+    </div>
+    <button id="boost">⚡</button>
+  </div>
+  
+  <script>
+    /********* GLOBAL VARIABLES & CONSTANTS *********/
+    const keyToButton = {
+      "ArrowUp": "up", "KeyW": "up",
+      "ArrowDown": "down", "KeyS": "down",
+      "ArrowLeft": "left", "KeyA": "left",
+      "ArrowRight": "right", "KeyD": "right",
+      "Space": "boost"
+    };
+    const BOOST_MAX = 5.0;
+    
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    let canvasWidth = window.innerWidth;
+    let canvasHeight = window.innerHeight;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    
+    const CONTROL_HEIGHT = 120;
+    const GAME_HEIGHT = canvasHeight - CONTROL_HEIGHT;
+    
+    const CELL_SIZE = 20;
+    const COLS = Math.floor(canvasWidth / CELL_SIZE);
+    const ROWS = Math.floor(GAME_HEIGHT / CELL_SIZE);
+    
+    const BASE_SPEED = 6.0;
+    const BIKE_LENGTH = 1.5;
+    const LOOKAHEAD_STEPS = 5;
+    const ROUNDS_TO_WIN = 2;
+    
+    // Expose constants for AI
+    window.COLS = COLS;
+    window.ROWS = ROWS;
+    window.BIKE_LENGTH = BIKE_LENGTH;
+    
+    const STATE = {
+      START: "start",
+      INSTRUCTIONS: "instructions",
+      READY: "ready",
+      GAME: "game",
+      ROUND_WIN: "round_win",
+      GAME_OVER: "game_over"
+    };
+    let gameState = STATE.START;
+    let stateTimer = 0;
+    let roundNumber = 1;
+    let playerScore = 0;
+    let aiScore = 0;
+    let roundResult = "";
+    const explosions = [];
+    
+    let player, ai;
+    window.player = null; // for AudioManager references
+    
+    const boostBtn = document.getElementById("boost");
+    
+    /********* UTILITY FUNCTIONS *********/
+    function updateScoreboard() {
+      document.getElementById("scoreboard").textContent =
+        `Round: ${roundNumber} | Player: ${playerScore} | AI: ${aiScore}`;
+    }
+    
+    function cellEquals(a, b) {
+      return a.x === b.x && a.y === b.y;
+    }
+    
+    /********* CLASS DEFINITIONS *********/
+    class Explosion {
+      constructor(px, py, color) {
+        this.x = px;
+        this.y = py;
+        this.color = color;
+        this.radius = 0;
+        this.alpha = 1.0;
+      }
+      update(dt) {
+        this.radius += 4 * CELL_SIZE * dt;
+        this.alpha -= 1 * dt;
+      }
+      draw() {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.restore();
+      }
+      get done() {
+        return this.alpha <= 0;
+      }
+    }
+    
+    class Lightbike {
+      constructor(bx, by, dir, color) {
+        this.backX = bx;
+        this.backY = by;
+        this.dir = { x: dir.x, y: dir.y };
+        this.color = color;
+        this.trail = [];
+        this.lastCell = { x: Math.floor(bx), y: Math.floor(by) };
+        this.trail.push({ x: this.lastCell.x, y: this.lastCell.y });
+        this.pendingTurn = null;
+        this.boostActive = false;
+        this.boostFuel = BOOST_MAX;
+      }
+      
+      reset(bx, by, dir) {
+        this.backX = bx;
+        this.backY = by;
+        this.dir = { x: dir.x, y: dir.y };
+        this.trail = [];
+        this.lastCell = { x: Math.floor(bx), y: Math.floor(by) };
+        this.trail.push({ x: this.lastCell.x, y: this.lastCell.y });
+        this.pendingTurn = null;
+        this.boostActive = false;
+        this.boostFuel = BOOST_MAX;
+      }
+      
+      /**
+       * We round to the nearest integer corner whenever crossing a boundary,
+       * to ensure no diagonal line segments appear in the trail.
+       */
+      update(dt) {
+        let speedFactor = this.boostActive ? 2 : 1;
+        let distance = BASE_SPEED * speedFactor * dt;
+        
+        while (distance > 0) {
+          let cellBoundaryDist = this.distanceToBoundary();
+          
+          // If we are extremely close to the boundary, do a tiny step
+          if (cellBoundaryDist < 1e-3) {
+            // If there's a turn pending, pivot at the corner
+            if (this.pendingTurn) {
+              // Round the position to the nearest corner
+              this.backX = Math.round(this.backX);
+              this.backY = Math.round(this.backY);
+              
+              // Insert pivot point
+              let pivotX = this.backX;
+              let pivotY = this.backY;
+              
+              // If not reversing 180°, do the turn
+              if (!(this.dir.x === -this.pendingTurn.x && this.dir.y === -this.pendingTurn.y)) {
+                this.trail.push({ x: pivotX, y: pivotY });
+                this.dir = { ...this.pendingTurn };
+              }
+              this.pendingTurn = null;
+            }
+            // Move a tiny step
+            this.backX += this.dir.x * 1e-3;
+            this.backY += this.dir.y * 1e-3;
+            distance -= 1e-3;
+            continue;
+          }
+          
+          if (cellBoundaryDist > distance) {
+            // We won't reach the boundary this frame
+            this.backX += this.dir.x * distance;
+            this.backY += this.dir.y * distance;
+            distance = 0;
+          } else {
+            // We'll exactly reach the boundary (or pass it)
+            this.backX += this.dir.x * cellBoundaryDist;
+            this.backY += this.dir.y * cellBoundaryDist;
+            distance -= cellBoundaryDist;
+            
+            // Now we round to the nearest corner
+            this.backX = Math.round(this.backX);
+            this.backY = Math.round(this.backY);
+            
+            let cellX = this.backX;
+            let cellY = this.backY;
+            
+            // If there's a turn pending, pivot here
+            if (this.pendingTurn) {
+              if (!(this.dir.x === -this.pendingTurn.x && this.dir.y === -this.pendingTurn.y)) {
+                this.trail.push({ x: cellX, y: cellY });
+                this.dir = { ...this.pendingTurn };
+              }
+              this.pendingTurn = null;
+            }
+            this.lastCell = { x: cellX, y: cellY };
+            this.trail.push({ x: cellX, y: cellY });
+          }
+        }
+      }
+      
+      distanceToBoundary() {
+        let fracX, fracY;
+        if (this.dir.x > 0) {
+          fracX = Math.ceil(this.backX) - this.backX;
+        } else if (this.dir.x < 0) {
+          fracX = this.backX - Math.floor(this.backX);
+        } else {
+          fracX = Infinity;
+        }
+        if (this.dir.y > 0) {
+          fracY = Math.ceil(this.backY) - this.backY;
+        } else if (this.dir.y < 0) {
+          fracY = this.backY - Math.floor(this.backY);
+        } else {
+          fracY = Infinity;
+        }
+        let dist = Math.min(fracX, fracY);
+        return dist < 0 ? 0 : dist;
+      }
+      
+      getFrontCell() {
+        let fx = this.backX + this.dir.x * BIKE_LENGTH;
+        let fy = this.backY + this.dir.y * BIKE_LENGTH;
+        return { x: Math.floor(fx), y: Math.floor(fy) };
+      }
+      
+      draw() {
+  // Set up glow effect
+  ctx.shadowBlur = CELL_SIZE * 0.8;
+  ctx.shadowColor = this.color;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  
+  // Draw the trail
+  ctx.lineJoin = "miter";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = this.color;
+  ctx.lineWidth = CELL_SIZE * 0.3;
+  ctx.beginPath();
+  
+  if (this.trail.length > 0) {
+    let first = this.trail[0];
+    ctx.moveTo(first.x * CELL_SIZE + CELL_SIZE/2, first.y * CELL_SIZE + CELL_SIZE/2);
+    for (let i = 1; i < this.trail.length; i++) {
+      let pt = this.trail[i];
+      ctx.lineTo(pt.x * CELL_SIZE + CELL_SIZE/2, pt.y * CELL_SIZE + CELL_SIZE/2);
+    }
+    ctx.lineTo(this.backX * CELL_SIZE + CELL_SIZE/2, this.backY * CELL_SIZE + CELL_SIZE/2);
+  }
+  ctx.stroke();
+  
+  // Reset shadow for drawing bike body (we don't want the bike body glow to be too intense)
+  ctx.shadowBlur = CELL_SIZE * 0.5;
+  
+  // Draw rectangular body
+  let backPx = this.backX * CELL_SIZE + CELL_SIZE/2;
+  let backPy = this.backY * CELL_SIZE + CELL_SIZE/2;
+  let frontPx = backPx + this.dir.x * BIKE_LENGTH * CELL_SIZE;
+  let frontPy = backPy + this.dir.y * BIKE_LENGTH * CELL_SIZE;
+  let angle = Math.atan2(frontPy - backPy, frontPx - backPx);
+  let bodyLength = BIKE_LENGTH * CELL_SIZE;
+  let bodyWidth = CELL_SIZE * 0.5;
+  
+  ctx.save();
+  ctx.translate(backPx, backPy);
+  ctx.rotate(angle);
+  ctx.fillStyle = this.color;
+  ctx.fillRect(0, -bodyWidth/2, bodyLength, bodyWidth);
+  ctx.restore();
+  
+  // Draw head with enhanced glow
+  ctx.shadowBlur = CELL_SIZE * 1.0;
+  let headRadius = CELL_SIZE * 0.5;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.arc(frontPx, frontPy, headRadius, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Reset shadow effects for other rendering
+  ctx.shadowBlur = 0;
+}
+    }
+    
+    /********* GAME LOGIC *********/
+    function initializeBikes() {
+      let startX = Math.floor(COLS / 2);
+      // Both bikes share the same X coordinate to be across from each other horizontally
+      player = new Lightbike(startX, ROWS - 4, { x: 0, y: -1 }, "rgb(0,150,255)");
+      ai = new Lightbike(startX, 3, { x: 0, y: 1 }, "rgb(255,215,0)");
+      window.player = player;
+    }
+    initializeBikes();
+    updateScoreboard();
+    
+    function checkCollision(bike, opponent) {
+      let fCell = bike.getFrontCell();
+      if (fCell.x < 0 || fCell.x >= COLS || fCell.y < 0 || fCell.y >= ROWS) {
+        return true;
+      }
+      let count = 0;
+      for (let c of bike.trail) {
+        if (cellEquals(c, fCell)) count++;
+      }
+      if (count > 0) return true;
+      for (let c of opponent.trail) {
+        if (cellEquals(c, fCell)) return true;
+      }
+      return false;
+    }
+    
+    function resetRound() {
+      player.boostActive = false;
+      player.boostFuel = BOOST_MAX;
+      boostBtn.classList.remove("active");
+      let startX = Math.floor(COLS / 2);
+      // Same X coordinate
+      player.reset(startX, ROWS - 4, { x: 0, y: -1 });
+      ai.reset(startX, 3, { x: 0, y: 1 });
+      gameState = STATE.READY;
+      stateTimer = 0;
+      updateScoreboard();
+    }
+    
+    function checkGameOver() {
+      roundNumber++;
+      if (playerScore === ROUNDS_TO_WIN || aiScore === ROUNDS_TO_WIN) {
+        gameState = STATE.GAME_OVER;
+        AudioManager.stopEngineSounds();
+        AudioManager.stopBackgroundMusicAudio();
+        AudioManager.fadeOutAndPlayAttract2();
+      } else {
+        resetRound();
+      }
+    }
+    
+    function startReadyScreen() {
+      roundNumber = 1;
+      playerScore = 0;
+      aiScore = 0;
+      explosions.length = 0;
+      initializeBikes();
+      updateScoreboard();
+      stateTimer = 0;
+      gameState = STATE.READY;
+      AudioManager.getReadyAudio.currentTime = 0;
+      AudioManager.getReadyAudio.play();
+      AudioManager.startEngineSounds();
+      AudioManager.stopBackgroundMusicAudio();
+      console.log("Starting game from instructions or splash screen");
+    }
+    
+    /********* MAIN GAME LOOP *********/
+    let lastTime = 0;
+    function gameLoop(timestamp) {
+      let dt = (timestamp - lastTime) / 1000;
+      lastTime = timestamp;
+      
+      if (gameState === STATE.GAME) {
+        if (!bgMusicAudio.paused) {
+          AudioManager.stopBackgroundMusicAudio();
+          console.log("Music muted during round");
+        }
+        if (AudioManager.fightMusicAudio.paused) {
+          AudioManager.fightMusicAudio.currentTime = 0;
+          AudioManager.fightMusicAudio.play();
+          currentMusic = AudioManager.fightMusicAudio;
+        }
+        if (player.boostActive) {
+          player.boostFuel -= dt;
+          if (player.boostFuel <= 0) {
+            player.boostFuel = 0;
+            player.boostActive = false;
+          }
+        }
+        player.update(dt);
+        AILogic.aiBehavior(ai, player, LOOKAHEAD_STEPS);
+        ai.update(dt);
+        AudioManager.updateEngineSounds();
+        
+        let pCollided = AILogic.checkCollision(player, ai);
+        let aCollided = AILogic.checkCollision(ai, player);
+        
+        if (pCollided && aCollided) {
+          AudioManager.explosionAudio.currentTime = 0;
+          AudioManager.explosionAudio.play();
+          createExplosion(player);
+          createExplosion(ai);
+          resetRound();
+        } else if (pCollided) {
+          AudioManager.explosionAudio.currentTime = 0;
+          AudioManager.explosionAudio.play();
+          createExplosion(player);
+          aiScore++;
+          roundResult = "AI wins round!";
+          AudioManager.aiWinAudio.currentTime = 0;
+          AudioManager.aiWinAudio.play();
+          gameState = STATE.ROUND_WIN;
+          stateTimer = 0;
+          updateScoreboard();
+        } else if (aCollided) {
+          AudioManager.explosionAudio.currentTime = 0;
+          AudioManager.explosionAudio.play();
+          createExplosion(ai);
+          playerScore++;
+          roundResult = "Player wins round!";
+          AudioManager.playerWinAudio.currentTime = 0;
+          AudioManager.playerWinAudio.play();
+          gameState = STATE.ROUND_WIN;
+          stateTimer = 0;
+          updateScoreboard();
+        }
+      } else if (gameState === STATE.READY || gameState === STATE.ROUND_WIN) {
+        stateTimer += dt;
+        if (gameState === STATE.READY && stateTimer >= 2.5) {
+          gameState = STATE.GAME;
+          if (AudioManager.fightMusicAudio.paused) {
+            AudioManager.fightMusicAudio.currentTime = 0;
+            AudioManager.fightMusicAudio.play();
+          }
+          currentMusic = AudioManager.fightMusicAudio;
+        }
+        if (gameState === STATE.ROUND_WIN && stateTimer >= 1) {
+          checkGameOver();
+        }
+      }
+      
+      Renderer.drawScene(dt, canvasWidth, canvasHeight, GAME_HEIGHT, COLS, CELL_SIZE, gameState, player, ai, explosions, roundResult, playerScore, aiScore);
+      Renderer.updateBoostIndicator(BOOST_MAX);
+      requestAnimationFrame(gameLoop);
+    }
+    requestAnimationFrame(gameLoop);
+    
+    function createExplosion(bike) {
+      let fx = bike.backX + bike.dir.x * BIKE_LENGTH;
+      let fy = bike.backY + bike.dir.y * BIKE_LENGTH;
+      let px = fx * CELL_SIZE + CELL_SIZE / 2;
+      let py = fy * CELL_SIZE + CELL_SIZE / 2;
+      explosions.push(new Explosion(px, py, bike.color));
+      AudioManager.explosionAudio.currentTime = 0;
+      AudioManager.explosionAudio.play();
+      console.log("Explosion created at:", px, py);
+    }
+    
+    /********* EVENT LISTENERS *********/
+    // Input is in input.js
+    InputHandler.init();
+    
+    // If gameState is INSTRUCTIONS, any key except "I" starts the game
+    window.addEventListener("keydown", (e) => {
+      if (gameState === STATE.INSTRUCTIONS) {
+        if (e.code !== "KeyI") {
+          startReadyScreen();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
