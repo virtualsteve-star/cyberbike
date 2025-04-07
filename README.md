@@ -2,6 +2,8 @@
 
 A web-based arcade game inspired by Tron: Light Cycles. Players control a Cyberbike in a cyberpunk grid-based arena, attempting to trap an AI opponent.
 
+Copyright © 2025 Steve Wilson. All rights reserved.
+
 ## Features
 
 - Grid-based movement with 90-degree turns
@@ -47,4 +49,4 @@ A web-based arcade game inspired by Tron: Light Cycles. Players control a Cyberb
 
 ## License
 
-MIT License - See LICENSE file for details 
+MIT License - Copyright (c) 2025 Steve Wilson - See LICENSE file for details 
