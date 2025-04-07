@@ -1,6 +1,6 @@
 # Cyberbike Duel
 
-A web-based arcade game inspired by Tron: Light Cycles. Players control a lightbike in a cyberpunk grid-based arena, attempting to trap an AI opponent.
+A web-based arcade game inspired by Tron: Light Cycles. Players control a Cyberbike in a cyberpunk grid-based arena, attempting to trap an AI opponent.
 
 ## Features
 
@@ -15,19 +15,19 @@ A web-based arcade game inspired by Tron: Light Cycles. Players control a lightb
 ## Controls
 
 ### Desktop
-- Arrow Keys or WASD: Steer the lightbike
+- Arrow Keys or WASD: Steer the Cyberbike
 - Spacebar: Activate boost
 - I: View instructions
 - R: Restart game (after game over)
 
 ### Mobile
-- On-screen D-pad: Steer the lightbike
+- On-screen D-pad: Steer the Cyberbike
 - Boost button: Activate boost
 
 ## How to Play
 
 1. Press Space to start the game
-2. Use arrow keys or WASD to steer your lightbike
+2. Use arrow keys or WASD to steer your Cyberbike
 3. Avoid colliding with walls, your trail, or the AI's trail
 4. Try to trap the AI opponent by forcing them into a collision
 5. First to win 3 rounds wins the match
@@ -36,7 +36,7 @@ A web-based arcade game inspired by Tron: Light Cycles. Players control a lightb
 
 - Built with vanilla JavaScript
 - Uses HTML5 Canvas for rendering
-- Web Audio API for sound effects
+- Web Audio API for sound effects and AI-generated music
 - Responsive design that adapts to browser dimensions
 
 ## Setup
